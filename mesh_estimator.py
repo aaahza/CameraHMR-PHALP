@@ -1,3 +1,4 @@
+import fix_loading
 import cv2
 import os
 import json
@@ -61,7 +62,7 @@ class HumanMeshEstimator:
         return model
 
     def init_model(self):
-        model = CameraHMR.load_from_checkpoint(CHECKPOINT_PATH, strict=False, _load_weights_only=False)
+        model = CameraHMR.load_from_checkpoint(CHECKPOINT_PATH, strict=False)
         model = model.to(self.device)
         model.eval()
         return model
