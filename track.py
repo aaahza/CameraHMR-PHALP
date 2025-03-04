@@ -83,6 +83,7 @@ class CameraHMRPredictor(HMR2018Predictor):
 
         B, _, H, W = x.shape
         
+        # TEMP FIX
         # Create a complete batch with all required fields
         batch = {
             'img': x[:, :3, :, :],                           # RGB channels
@@ -128,6 +129,7 @@ class HMR2023TextureSampler(CameraHMRPredictor):
     def forward(self, x):
         B, _, H, W = x.shape
     
+        # TEMP FIX
         # Create a complete batch with all required fields
         batch = {
             'img': x[:, :3, :, :],                           # RGB channels
@@ -208,6 +210,13 @@ class HMR2023TextureSampler(CameraHMRPredictor):
             'pose_smpl': pred_smpl_params,
             'pred_cam':  cam_trans,
         }
+
+        # Replace NaNs with zeros in the outputs
+        # TEMP FIX
+        for k, v in out.items():
+            if isinstance(v, torch.Tensor) and torch.isnan(v).any():
+                out[k] = torch.nan_to_num(v, nan=0.0)
+
         return out
 
 class HMR2_4dhuman(PHALP):
