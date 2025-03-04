@@ -231,6 +231,14 @@ class HMR2_4dhuman(PHALP):
             ground_truth_track_id, ground_truth_annotations
         )
     
+class PHALP_Prime_TokenHMR(PHALP):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+
+    def setup_hmr(self):
+        self.HMAR = CameraHMRPredictor(self.cfg)
+
+
 @dataclass
 class Human4DConfig(FullConfig):
     # override defaults if needed
@@ -244,7 +252,7 @@ cs.store(name="config", node=Human4DConfig)
 def main(cfg: DictConfig) -> Optional[float]:
     """Main function for running the PHALP tracker."""
 
-    phalp_tracker = HMR2_4dhuman(cfg)
+    phalp_tracker = PHALP_Prime_TokenHMR(cfg)
 
     phalp_tracker.track()
 
