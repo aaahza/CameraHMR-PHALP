@@ -174,6 +174,15 @@ class HMR2023TextureSampler(CameraHMRPredictor):
         # Project map_verts to image using K,R,t
         # map_verts_view = einsum('bij,bnj->bni', R, map_verts) + t # R=I t=0
         focal = fl_h / (self.img_size / 2)
+
+        # TEMP FIX
+        zero_z_mask = map_verts[:, :, 2:3].abs() < 1e-10
+        if zero_z_mask.any():
+            print(f"Warning: Found {zero_z_mask.sum().item()} zeros in z-dimension")
+            # Add small epsilon to avoid division by zero
+            map_verts = map_verts.clone()
+            map_verts[:, :, 2:3][zero_z_mask] = 1e-10
+
         map_verts_proj = focal * map_verts[:, :, :2] / map_verts[:, :, 2:3] # B,N,2
         map_verts_depth = map_verts[:, :, 2] # B,N
       
@@ -229,6 +238,59 @@ class HMR2_4dhuman(PHALP):
 
     def setup_hmr(self): 
         self.HMAR = HMR2023TextureSampler(self.cfg)
+
+
+    # TEMP FIX 
+    def setup_deepsort(self):
+        # Call parent method first
+        super().setup_deepsort()
+        
+        # Now add our monkey patch to intercept NaN values
+        self._original_update = self.tracker.update
+        
+        def safe_update(detections, t_, frame_name, shot):
+            # Clean NaNs from detection features before they reach the tracking pipeline
+            for det in detections:
+                # Check the feature vector used by the tracker
+                if hasattr(det, 'feature') and isinstance(det.feature, np.ndarray) and np.isnan(det.feature).any():
+                    print(f"Warning: Found NaNs in detection features at frame {t_}, replacing with zeros")
+                    det.feature = np.nan_to_num(det.feature, nan=0.0)
+                
+                # Check other detection data
+                if hasattr(det, 'detection_data'):
+                    for k, v in det.detection_data.items():
+                        if isinstance(v, np.ndarray) and np.isnan(v).any():
+                            print(f"Warning: Found NaNs in detection_data[{k}] at frame {t_}, replacing with zeros")
+                            det.detection_data[k] = np.nan_to_num(v, nan=0.0)
+            
+            # Call the original update
+            return self._original_update(detections, t_, frame_name, shot)
+        
+        # Replace the update method
+        self.tracker.update = safe_update
+
+    def get_human_features(self, image, seg_mask, bbox, bbox_pad, score, frame_name, cls_id, t_, measurments, gt=1, ann=None, extra_data=None):
+        # Run the original method to get detections
+        detections = super().get_human_features(image, seg_mask, bbox, bbox_pad, score, frame_name, cls_id, t_, measurments, gt, ann, extra_data)
+        
+        # Clean NaNs from detections
+        for i, detection in enumerate(detections):
+            # Clean the feature vectors
+            if hasattr(detection, 'feature') and isinstance(detection.feature, np.ndarray) and np.isnan(detection.feature).any():
+                detections[i].feature = np.nan_to_num(detection.feature, nan=0.0)
+            
+            # Clean all detection data
+            for k in list(detection.detection_data.keys()):
+                v = detection.detection_data[k]
+                if isinstance(v, np.ndarray) and np.isnan(v).any():
+                    detections[i].detection_data[k] = np.nan_to_num(v, nan=0.0)
+                elif isinstance(v, dict):
+                    for kk, vv in v.items():
+                        if isinstance(vv, np.ndarray) and np.isnan(vv).any():
+                            detections[i].detection_data[k][kk] = np.nan_to_num(vv, nan=0.0)
+        
+        return detections
+
 
     def get_detections(self, image, frame_name, t_, additional_data=None, measurments=None):
         (
