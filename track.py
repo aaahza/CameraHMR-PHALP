@@ -216,6 +216,10 @@ class HMR2023TextureSampler(CameraHMRPredictor):
         for k, v in out.items():
             if isinstance(v, torch.Tensor) and torch.isnan(v).any():
                 out[k] = torch.nan_to_num(v, nan=0.0)
+            elif isinstance(v, dict):
+                for kk, vv in v.items():
+                    if isinstance(vv, torch.Tensor) and torch.isnan(vv).any():
+                        out[k][kk] = torch.nan_to_num(vv, nan=0.0)
 
         return out
 
