@@ -52,7 +52,8 @@ class CameraHMRPredictor(HMR2018Predictor):
         #     ]] * B, device=x.device)
         # }
 
-        img_cv2 = x[:, :3, :, :]
+        img_tensor = x[0, :3]  # [3, H, W]
+        img_cv2 = img_tensor.detach().cpu().numpy().transpose(1, 2, 0)  # [H, W, 3]
 
         det_out = self.estimator.detector(img_cv2)
         det_instances = det_out['instances']
