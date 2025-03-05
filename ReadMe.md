@@ -40,6 +40,10 @@ Create a conda environment and install all the requirements.
 conda create -n camerahmr python=3.10
 conda activate camerahmr
 pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+conda install -c "nvidia/label/cuda-11.8.0" cuda-toolkit
+# ONLY IF your GCC version is larger than 11
+conda install -c conda-forge gxx=9.5
+conda install -c conda-forge scikit-image=0.16.2
 pip install -r requirements.txt
 ```
 
@@ -51,6 +55,11 @@ Download necessary demo files using:
 
 ```bash
 bash fetch_demo_data.sh
+```
+PHALP needs SMPL neutral model for running video demo. Copy the model to appropriate location.
+
+```shell
+cp data/models/SMPL/SMPL_NEUTRAL.pkl $HOME/.cache/phalp/3D/models/smpl/
 ```
 
 Alternatively, download files manually from the [CameraHMR website](https://camerahmr.is.tue.mpg.de). Ensure to update paths in [`constants.py`](core/constants.py) if doing so manually.
