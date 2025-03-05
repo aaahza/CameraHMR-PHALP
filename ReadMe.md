@@ -42,7 +42,7 @@ conda activate camerahmr
 pip install torch==2.0.0 torchvision==0.15.1 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu118
 conda install -c "nvidia/label/cuda-11.8.0" cuda-toolkit
 # ONLY IF your GCC version is larger than 11
-conda install -c conda-forge gxx=11
+conda install -c conda-forge gxx=11.4
 conda install -c conda-forge scikit-image=0.16.2
 pip install -r requirements.txt
 ```
