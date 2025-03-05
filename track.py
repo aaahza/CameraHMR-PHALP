@@ -65,33 +65,19 @@ class CameraHMRPredictor(HMR2018Predictor):
         cam_int = self.estimator.get_cam_intrinsics(img_cv2)
 
         dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=32, shuffle=False, num_workers=10)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=len(dataset), shuffle=False, num_workers=10)
         
-        pred_smpl_params_list = []
-        pred_cam_list = []
-        focal_length_list = []
+        batch = next(iter(dataloader))
+        batch = recursive_to(batch, self.device)
+        img_h, img_w = batch['img_size'][0]
+        with torch.no_grad():
+            out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
-        for batch in dataloader:
-            batch = recursive_to(batch, self.device)
-            img_h, img_w = batch['img_size'][0]
-            with torch.no_grad():
-                out_smpl_params, out_cam, focal_length_ = self.model(batch)
-
-            # output_vertices, output_joints, output_cam_trans = self.estimator.get_output_mesh(out_smpl_params, out_cam, batch)
-            pred_smpl_params_list.append(out_smpl_params)
-            pred_cam_list.append(out_cam)
-            focal_length_list.append(focal_length_)
-
-        pred_smpl_params_all = torch.cat(pred_smpl_params_list, dim=0)
-        pred_cam_all = torch.cat(pred_cam_list, dim=0)
-        focal_length_all = torch.cat(focal_length_list, dim=0)
-
-        # 8. Merge the outputs from the old HMR and the patch-based estimator.
         out = {
             **hmar_out,
-            'pose_smpl': pred_smpl_params_all,
-            'pred_cam': pred_cam_all,
-            'focal_length': focal_length_all,
+            'pose_smpl': out_smpl_params,
+            'pred_cam': out_cam,
+            'focal_length': focal_length_,
             # 'output_vertices': output_vertices,
             # 'output_joints': output_joints,
             # 'output_cam_trans': output_cam_trans
