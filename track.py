@@ -65,10 +65,14 @@ class CameraHMRPredictor(HMR2018Predictor):
         cam_int = self.estimator.get_cam_intrinsics(img_cv2)
 
         dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False)
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=len(dataset), shuffle=False, num_workers=10)
+        batch_size = len(dataset)
+        if batch_size == 0:
+            raise ValueError("No valid detections found, dataset is empty.")
+
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=10)
         
         batch = next(iter(dataloader))
-        batch = recursive_to(batch, self.device)
+        batch = recursive_to(batch, x.device)
         img_h, img_w = batch['img_size'][0]
         with torch.no_grad():
             out_smpl_params, out_cam, focal_length_ = self.model(batch)
