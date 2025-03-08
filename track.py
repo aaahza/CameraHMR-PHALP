@@ -34,52 +34,110 @@ class CameraHMRPredictor(HMR2018Predictor):
         self.model.eval()
 
     def forward(self, x):
+        # Get the base output from the parent class
         hmar_out = self.hmar_old(x)
         device = x.device
-
-        img_tensor = x[0, :3]  # [3, H, W]
-        img_cv2 = img_tensor.detach().cpu().numpy().transpose(1, 2, 0)  # [H, W, 3]
-
-        det_out = self.estimator.detector(img_cv2)
-        det_instances = det_out['instances']
-        valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
-        boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
-        bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0 
-        bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
-
-        cam_int = self.estimator.get_cam_intrinsics(img_cv2)
-
-        dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False)
-        batch_size = len(dataset)
-        if batch_size == 0:
-            raise ValueError("No valid detections found, dataset is empty.")
-
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=10)
+        batch_size = x.size(0)
         
-        batch = next(iter(dataloader))
-        batch = recursive_to(batch, device)
-        img_h, img_w = batch['img_size'][0]
-        with torch.no_grad():
-            out_smpl_params, out_cam, focal_length_ = self.model(batch)
-
-        # out = {
-        #     **hmar_out,
-        #     'pose_smpl': out_smpl_params,
-        #     'pred_cam': out_cam,
-        #     'focal_length': focal_length_,
-        #     # 'output_vertices': output_vertices,
-        #     # 'output_joints': output_joints,
-        #     # 'output_cam_trans': output_cam_trans
-        # }
-
-        # pred_smpl_params, pred_cam, _ = self.model(batch)
-
-        out = hmar_out | {
-            'pose_smpl': out_smpl_params,
-            'pred_cam': out_cam,
+        # Process each image in the batch
+        all_smpl_params = []
+        all_pred_cam = []
+        all_focal_lengths = []
+        
+        for b in range(batch_size):
+            # Extract the image and mask for this batch item
+            img_tensor = x[b, :3]  # [3, H, W]
+            mask = x[b, 3:4] if x.size(1) > 3 else None  # Get mask if available
+            
+            # Convert to numpy for detector
+            img_cv2 = img_tensor.detach().cpu().numpy().transpose(1, 2, 0)  # [H, W, 3]
+            img_h, img_w = img_cv2.shape[:2]
+            
+            # Run detector
+            det_out = self.estimator.detector(img_cv2)
+            det_instances = det_out['instances']
+            valid_idx = (det_instances.pred_classes == 0) & (det_instances.scores > 0.5)
+            
+            if valid_idx.sum() == 0:
+                # If no detections, create default parameters
+                default_smpl_params = {
+                    'global_orient': torch.zeros((1, 1, 3, 3), device=device),
+                    'body_pose': torch.zeros((1, 21, 3, 3), device=device),
+                    'betas': torch.zeros((1, 10), device=device),
+                }
+                default_cam = torch.zeros((1, 3), device=device)
+                default_focal_length = torch.tensor([img_h], device=device).float()
+                
+                all_smpl_params.append(default_smpl_params)
+                all_pred_cam.append(default_cam)
+                all_focal_lengths.append(default_focal_length)
+                continue
+                
+            # Process valid detections
+            boxes = det_instances.pred_boxes.tensor[valid_idx].cpu().numpy()
+            bbox_scale = (boxes[:, 2:4] - boxes[:, 0:2]) / 200.0 
+            bbox_center = (boxes[:, 2:4] + boxes[:, 0:2]) / 2.0
+            
+            # Get camera intrinsics
+            cam_int = self.estimator.get_cam_intrinsics(img_cv2)
+            
+            # Create dataset and dataloader for this image
+            dataset = Dataset(img_cv2, bbox_center, bbox_scale, cam_int, False)
+            
+            # If dataset is empty, use default parameters
+            if len(dataset) == 0:
+                default_smpl_params = {
+                    'global_orient': torch.zeros((1, 1, 3, 3), device=device),
+                    'body_pose': torch.zeros((1, 21, 3, 3), device=device),
+                    'betas': torch.zeros((1, 10), device=device),
+                }
+                default_cam = torch.zeros((1, 3), device=device)
+                default_focal_length = torch.tensor([img_h], device=device).float()
+                
+                all_smpl_params.append(default_smpl_params)
+                all_pred_cam.append(default_cam)
+                all_focal_lengths.append(default_focal_length)
+                continue
+            
+            # Create dataloader with appropriate batch size
+            dataloader = torch.utils.data.DataLoader(
+                dataset, 
+                batch_size=len(dataset), 
+                shuffle=False, 
+                num_workers=0  # Use 0 for debugging, increase for performance
+            )
+            
+            # Process the batch
+            batch = next(iter(dataloader))
+            batch = recursive_to(batch, device)
+            
+            # Run the model
+            with torch.no_grad():
+                out_smpl_params, out_cam, focal_length_ = self.model(batch)
+            
+            # Store results
+            all_smpl_params.append(out_smpl_params)
+            all_pred_cam.append(out_cam)
+            all_focal_lengths.append(focal_length_)
+        
+        # Use the first detection for each image (or default if none)
+        # This matches the way PHALP typically works with one person per frame
+        smpl_params = {
+            'global_orient': torch.cat([p['global_orient'][0:1] for p in all_smpl_params], dim=0),
+            'body_pose': torch.cat([p['body_pose'][0:1] for p in all_smpl_params], dim=0),
+            'betas': torch.cat([p['betas'][0:1] for p in all_smpl_params], dim=0),
         }
-        return out
-    
+        pred_cam = torch.cat([cam[0:1] for cam in all_pred_cam], dim=0)
+        focal_length = torch.cat([fl[0:1] for fl in all_focal_lengths], dim=0)
+        
+        # Combine with original output
+        out = hmar_out | {
+            'pose_smpl': smpl_params,
+            'pred_cam': pred_cam,
+            'focal_length': focal_length
+        }
+        
+        return out    
     
 class PHALP_CameraHMR(PHALP):
     def __init__(self, cfg):
