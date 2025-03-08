@@ -37,21 +37,6 @@ class CameraHMRPredictor(HMR2018Predictor):
         hmar_out = self.hmar_old(x)
         device = x.device
 
-        B, _, H, W = x.shape
-        
-        # batch = {
-        #     'img': x[:, :3, :, :],                           # RGB channels
-        #     'mask': torch.clamp(x[:, 3, :, :], 0, 1),        # Mask channel
-        #     'box_center': torch.tensor([[W/2, H/2]] * B, device=x.device),  # Center of the image
-        #     'box_size': torch.tensor([max(H, W)] * B, device=x.device),     # Size of the box
-        #     'img_size': torch.tensor([[H, W]] * B, device=x.device),        # Original image size
-        #     'cam_int': torch.tensor([[                        # Default camera intrinsics
-        #         [5000.0, 0.0, W/2],
-        #         [0.0, 5000.0, H/2],
-        #         [0.0, 0.0, 1.0]
-        #     ]] * B, device=x.device)
-        # }
-
         img_tensor = x[0, :3]  # [3, H, W]
         img_cv2 = img_tensor.detach().cpu().numpy().transpose(1, 2, 0)  # [H, W, 3]
 
@@ -72,27 +57,27 @@ class CameraHMRPredictor(HMR2018Predictor):
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=10)
         
         batch = next(iter(dataloader))
-        batch = recursive_to(batch, x.device)
+        batch = recursive_to(batch, device)
         img_h, img_w = batch['img_size'][0]
         with torch.no_grad():
             out_smpl_params, out_cam, focal_length_ = self.model(batch)
 
-        out = {
-            **hmar_out,
-            'pose_smpl': out_smpl_params,
-            'pred_cam': out_cam,
-            'focal_length': focal_length_,
-            # 'output_vertices': output_vertices,
-            # 'output_joints': output_joints,
-            # 'output_cam_trans': output_cam_trans
-        }
+        # out = {
+        #     **hmar_out,
+        #     'pose_smpl': out_smpl_params,
+        #     'pred_cam': out_cam,
+        #     'focal_length': focal_length_,
+        #     # 'output_vertices': output_vertices,
+        #     # 'output_joints': output_joints,
+        #     # 'output_cam_trans': output_cam_trans
+        # }
 
         # pred_smpl_params, pred_cam, _ = self.model(batch)
 
-        # out = hmar_out | {
-        #     'pose_smpl': pred_smpl_params,
-        #     'pred_cam': pred_cam,
-        # }
+        out = hmar_out | {
+            'pose_smpl': out_smpl_params,
+            'pred_cam': out_cam,
+        }
         return out
     
     
